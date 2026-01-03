@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SuqManager POS</title>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        .tap-highlight:active { opacity: 0.7; transform: scale(0.98); }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans h-screen flex flex-col overflow-hidden">
+
+    <div id="root" class="h-full flex flex-col"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- Translations ---
+        const TEXTS = {
+            en: {
+                dashboard: "Dashboard",
+                sales: "Sales",
+                inventory: "Inventory",
+                todayProfit: "Today's Profit",
+                totalSales: "Total Sales",
+                addItem: "Add New Item",
+                itemName: "Item Name",
+                costPrice: "Cost Price",
+                sellPrice: "Selling Price",
+                qty: "Quantity",
+                save: "SAVE ITEM",
+                checkout: "COMPLETE SALE",
+                cart: "Current Sale",
+                empty: "No items yet",
+                sold: "Sold!",
+                lowStock: "Low Stock",
+                add: "Add",
+                lang: "አማርኛ"
+            },
+            am: {
+                dashboard: "ዳሽቦርድ",
+                sales: "ሽያጭ",
+                inventory: "እቃዎች",
+                todayProfit: "የዛሬ ትርፍ",
+                totalSales: "ጠቅላላ ሽያጭ",
+                addItem: "አዲስ እቃ ጨምር",
+                itemName: "የእቃው ስም",
+                costPrice: "የገዛህበት ዋጋ",
+                sellPrice: "የሚሸጥበት ዋጋ",
+                qty: "ብዛት",
+                save: "መዝግብ",
+                checkout: "ሽያጩን ጨርስ",
+                cart: "በሽያጭ ላይ",
+                empty: "ምንም እቃ የለም",
+                sold: "ተሽጧል!",
+                lowStock: "እያለቀ ነው",
+                add: "ጨምር",
+                lang: "English"
+            }
+        };
+
+        // --- Main Component ---
+        function App() {
+            // State
+            const [lang, setLang] = useState('en');
+            const [tab, setTab] = useState('dashboard');
+            const [inventory, setInventory] = useState([]);
+            const [transactions, setTransactions] = useState([]);
+            const [cart, setCart] = useState([]);
+            
+            // --- LocalStorage Logic ---
+            useEffect(() => {
+                const savedInv = localStorage.getItem('suq_inventory');
+                const savedTrans = localStorage.getItem('suq_transactions');
+                if (savedInv) setInventory(JSON.parse(savedInv));
+                if (savedTrans) setTransactions(JSON.parse(savedTrans));
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('suq_inventory', JSON.stringify(inventory));
+            }, [inventory]);
+
+            useEffect(() => {
+                localStorage.setItem('suq_transactions', JSON.stringify(transactions));
+            }, [transactions]);
+
+            // --- Helpers ---
+            const t = TEXTS[lang];
+            const toggleLang = () => setLang(l => l === 'en' ? 'am' : 'en');
+
+            // --- Inventory Actions ---
+            const addItem = (item) => {
+                setInventory([...inventory, { ...item, id: Date.now() }]);
+            };
+
+            // --- Sales Actions ---
+            const addToCart = (item) => {
+                if (item.qty <= 0) return;
+                const existing = cart.find(c => c.id === item.id);
+                if (existing) {
+                    // Check if we have enough stock
+                    if(existing.cartQty >= item.qty) return;
+                    setCart(cart.map(c => c.id === item.id ? { ...c, cartQty: c.cartQty + 1 } : c));
+                } else {
+                    setCart([...cart, { ...item, cartQty: 1 }]);
+                }
+            };
+
+            const completeSale = () => {
+                if (cart.length === 0) return;
+
+                const newTransactions = cart.map(item => ({
+                    itemId: item.id,
+                    name: item.name,
+                    profit: (item.sell - item.cost) * item.cartQty,
+                    saleAmount: item.sell * item.cartQty,
+                    timestamp: new Date().toISOString()
+                }));
+
+                // Update Inventory
+                const newInventory = inventory.map(invItem => {
+                    const cartItem = cart.find(c => c.id === invItem.id);
+                    if (cartItem) {
+                        return { ...invItem, qty: invItem.qty - cartItem.cartQty };
+                    }
+                    return invItem;
+                });
+
+                setTransactions([...transactions, ...newTransactions]);
+                setInventory(newInventory);
+                setCart([]);
+                alert(t.sold);
+            };
+
+            // --- Calculations ---
+            const todayStats = useMemo(() => {
+                const today = new Date().toISOString().split('T')[0];
+                const todayTrans = transactions.filter(tr => tr.timestamp.startsWith(today));
+                
+                return {
+                    profit: todayTrans.reduce((acc, curr) => acc + curr.profit, 0),
+                    sales: todayTrans.reduce((acc, curr) => acc + curr.saleAmount, 0)
+                };
+            }, [transactions]);
+
+            // --- Render ---
+            return (
+                <div className="flex flex-col h-full max-w-md mx-auto bg-white shadow-xl relative">
+                    
+                    {/* Header */}
+                    <div className="bg-blue-800 text-white p-4 flex justify-between items-center shadow-md">
+                        <h1 className="text-xl font-bold tracking-wider">SuqManager</h1>
+                        <button onClick={toggleLang} className="bg-white text-blue-800 px-3 py-1 rounded text-sm font-bold tap-highlight">
+                            {t.lang}
+                        </button>
+                    </div>
+
+                    {/* Main Content Area */}
+                    <div className="flex-1 overflow-y-auto p-4 bg-gray-50 pb-24">
+                        
+                        {/* DASHBOARD TAB */}
+                        {tab === 'dashboard' && (
+                            <div className="space-y-6">
+                                <div className="bg-green-600 text-white p-6 rounded-2xl shadow-lg text-center">
+                                    <p className="opacity-90 mb-1">{t.todayProfit}</p>
+                                    <h2 className="text-4xl font-bold">ETB {todayStats.profit.toFixed(2)}</h2>
+                                </div>
+                                <div className="bg-white p-6 rounded-2xl shadow border border-gray-200 text-center">
+                                    <p className="text-gray-500 mb-1">{t.totalSales}</p>
+                                    <h2 className="text-3xl font-bold text-gray-800">ETB {todayStats.sales.toFixed(2)}</h2>
+                                </div>
+                                <div className="mt-8">
+                                    <h3 className="font-bold text-gray-400 uppercase text-xs mb-2">{t.lowStock}</h3>
+                                    {inventory.filter(i => i.qty < 5).map(i => (
+                                        <div key={i.id} className="flex justify-between p-3 bg-red-50 border-l-4 border-red-500 mb-2 rounded">
+                                            <span>{i.name}</span>
+                                            <span className="font-bold text-red-600">{i.qty} left</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* INVENTORY TAB */}
+                        {tab === 'inventory' && (
+                            <div>
+                                <InventoryForm t={t} onAdd={addItem} />
+                                <div className="mt-6 space-y-2">
+                                    {inventory.map(item => (
+                                        <div key={item.id} className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                                            <div>
+                                                <div className="font-bold text-lg">{item.name}</div>
+                                                <div className="text-xs text-gray-500">Cost: {item.cost} | Sell: {item.sell}</div>
+                                            </div>
+                                            <div className="bg-gray-100 px-3 py-1 rounded-full font-bold">
+                                                Qty: {item.qty}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SALES TAB */}
+                        {tab === 'sales' && (
+                            <div className="h-full flex flex-col">
+                                {/* Cart Preview */}
+                                {cart.length > 0 && (
+                                    <div className="mb-4 bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                        <h3 className="font-bold text-blue-800 mb-2 border-b border-blue-200 pb-1">{t.cart}</h3>
+                                        {cart.map(c => (
+                                            <div key={c.id} className="flex justify-between text-sm mb-1">
+                                                <span>{c.name} x{c.cartQty}</span>
+                                                <span className="font-bold">{(c.sell * c.cartQty).toFixed(2)}</span>
+                                            </div>
+                                        ))}
+                                        <div className="mt-3 pt-2 border-t border-blue-200 flex justify-between items-center">
+                                            <span className="font-bold text-lg">Total: {cart.reduce((a,c) => a + (c.sell * c.cartQty), 0).toFixed(2)}</span>
+                                            <button 
+                                                onClick={completeSale}
+                                                className="bg-green-600 text-white px-4 py-2 rounded shadow font-bold tap-highlight"
+                                            >
+                                                {t.checkout}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Item Grid (Keypad style) */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    {inventory.map(item => (
+                                        <button 
+                                            key={item.id}
+                                            onClick={() => addToCart(item)}
+                                            disabled={item.qty <= 0}
+                                            className={`p-4 rounded-xl shadow-sm border-2 text-left transition-all tap-highlight ${
+                                                item.qty > 0 
+                                                ? 'bg-white border-gray-200 active:border-blue-500 active:bg-blue-50' 
+                                                : 'bg-gray-100 border-gray-100 opacity-50'
+                                            }`}
+                                        >
+                                            <div className="font-bold text-gray-900 truncate">{item.name}</div>
+                                            <div className="flex justify-between mt-2">
+                                                <span className="text-green-700 font-bold">{item.sell}</span>
+                                                <span className="text-xs bg-gray-200 px-2 py-0.5 rounded text-gray-600">Left: {item.qty}</span>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                                {inventory.length === 0 && <div className="text-center text-gray-400 mt-10">{t.empty}</div>}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Bottom Navigation */}
+                    <div className="bg-white border-t border-gray-300 flex justify-around p-2 pb-safe absolute bottom-0 w-full">
+                        <NavButton active={tab === 'inventory'} onClick={() => setTab('inventory')} icon="📦" label={t.inventory} />
+                        <NavButton active={tab === 'sales'} onClick={() => setTab('sales')} icon="💰" label={t.sales} />
+                        <NavButton active={tab === 'dashboard'} onClick={() => setTab('dashboard')} icon="📊" label={t.dashboard} />
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Sub Components ---
+
+        function NavButton({ active, onClick, icon, label }) {
+            return (
+                <button 
+                    onClick={onClick} 
+                    className={`flex flex-col items-center p-2 flex-1 tap-highlight ${active ? 'text-blue-700' : 'text-gray-400'}`}
+                >
+                    <span className="text-2xl mb-1">{icon}</span>
+                    <span className="text-xs font-bold">{label}</span>
+                </button>
+            );
+        }
+
+        function InventoryForm({ t, onAdd }) {
+            const [form, setForm] = useState({ name: '', cost: '', sell: '', qty: '' });
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if(!form.name || !form.cost || !form.sell || !form.qty) return;
+                onAdd({
+                    name: form.name,
+                    cost: parseFloat(form.cost),
+                    sell: parseFloat(form.sell),
+                    qty: parseInt(form.qty)
+                });
+                setForm({ name: '', cost: '', sell: '', qty: '' });
+            };
+
+            return (
+                <form onSubmit={handleSubmit} className="bg-white p-4 rounded-xl shadow-md space-y-3">
+                    <h3 className="font-bold text-gray-700 mb-2">{t.addItem}</h3>
+                    <input 
+                        type="text" 
+                        placeholder={t.itemName} 
+                        value={form.name}
+                        onChange={e => setForm({...form, name: e.target.value})}
+                        className="w-full p-3 border border-gray-300 rounded-lg text-lg focus:border-blue-500 outline-none"
+                    />
+                    <div className="flex gap-2">
+                        <input 
+                            type="number" 
+                            placeholder={t.costPrice} 
+                            value={form.cost}
+                            onChange={e => setForm({...form, cost: e.target.value})}
+                            className="w-1/2 p-3 border border-gray-300 rounded-lg text-lg outline-none"
+                        />
+                         <input 
+                            type="number" 
+                            placeholder={t.sellPrice} 
+                            value={form.sell}
+                            onChange={e => setForm({...form, sell: e.target.value})}
+                            className="w-1/2 p-3 border border-gray-300 rounded-lg text-lg outline-none"
+                        />
+                    </div>
+                    <input 
+                        type="number" 
+                        placeholder={t.qty} 
+                        value={form.qty}
+                        onChange={e => setForm({...form, qty: e.target.value})}
+                        className="w-full p-3 border border-gray-300 rounded-lg text-lg outline-none"
+                    />
+                    <button type="submit" className="w-full bg-blue-800 text-white p-4 rounded-lg font-bold text-lg active:bg-blue-900 tap-highlight">
+                        {t.save}
+                    </button>
+                </form>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
